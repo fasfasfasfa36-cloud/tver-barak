@@ -249,16 +249,16 @@ function App() {
     const matchesCategory = selectedCategory === 'Все' || ad.category === selectedCategory;
     const matchesMyAds = showMyAds ? ad.ownerEmail === currentUser?.email : true;
 
-    const matchesDistrict = !showMyDistrictOnly || 
-                           (currentUser && ad.district === currentUser.district) || 
+    const matchesDistrict = !showMyDistrictOnly ||
+                           (currentUser && ad.district === currentUser.district) ||
                            !currentUser;
 
     return matchesSearch && matchesCategory && matchesMyAds && matchesDistrict;
   });
 
-  const urgentFreeToday = filteredAnnouncements.filter(ad => 
-    ad.price === "0 ₽" || 
-    ad.category === "Отдам даром" || 
+  const urgentFreeToday = filteredAnnouncements.filter(ad =>
+    ad.price === "0 ₽" ||
+    ad.category === "Отдам даром" ||
     /сегодня|срочно|вечером|сейчас/i.test(ad.description || '')
   );
 
@@ -518,7 +518,7 @@ function App() {
               onClick={() => setActiveTab('urgent')}
               className={`px-4 py-1.5 transition ${activeTab === 'urgent' ? 'bg-red-600 text-white' : 'text-gray-300 hover:bg-gray-700/50'}`}
             >
-              <Flame size={16} className="inline mr-1" /> Даром сегодня
+              <Flame size={16} className="inline mr-1" /> Отдам даром сегодня
             </button>
             <button
               onClick={() => setActiveTab('news')}
@@ -706,7 +706,248 @@ function App() {
         </div>
       )}
 
-      {/* ... остальные модалки (авторизация, профиль, новости, чужой профиль) — копируй их из твоего кода, они без изменений ... */}
+      {/* Модалка авторизации */}
+      {showAuthModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md p-8 relative">
+            <button onClick={() => setShowAuthModal(false)} className="absolute top-4 right-4 text-gray-500">
+              <X size={24} />
+            </button>
+            <h2 className="text-2xl font-bold mb-6 dark:text-gray-100">
+              {authMode === 'login' ? 'Вход' : 'Регистрация'}
+            </h2>
+            <form onSubmit={handleAuth} className="space-y-5">
+              {authMode === 'register' && (
+                <div>
+                  <label className="block mb-2 dark:text-gray-300">Имя</label>
+                  <input name="name" type="text" className="w-full p-4 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-lg" />
+                </div>
+              )}
+              <div>
+                <label className="block mb-2 dark:text-gray-300">Email</label>
+                <input name="email" type="email" required className="w-full p-4 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-lg" />
+              </div>
+              <div>
+                <label className="block mb-2 dark:text-gray-300">Пароль</label>
+                <input name="password" type="password" required className="w-full p-4 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white text-lg" />
+              </div>
+              <button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 text-lg">
+                {authMode === 'login' ? 'Войти' : 'Зарегистрироваться'}
+              </button>
+            </form>
+            <p className="mt-6 text-center text-base">
+              {authMode === 'login' ? (
+                <button onClick={() => setAuthMode('register')} className="text-blue-600 hover:underline">
+                  Нет аккаунта? Регистрация
+                </button>
+              ) : (
+                <button onClick={() => setAuthMode('login')} className="text-blue-600 hover:underline">
+                  Уже есть аккаунт? Вход
+                </button>
+              )}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Модалка профиля */}
+      {showProfileModal && currentUser && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 relative border border-indigo-500/30">
+            <button onClick={() => setShowProfileModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white">
+              <X size={28} />
+            </button>
+
+            <div className="flex flex-col items-center mt-8 mb-8">
+              <div className="w-28 h-28 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center text-white text-5xl font-bold mb-4 shadow-lg">
+                {currentUser.name[0].toUpperCase()}
+              </div>
+              <h2 className="text-3xl font-bold text-white">{currentUser.name}</h2>
+              <p className="text-gray-400 mt-1">{currentUser.email}</p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4 mb-8">
+              <div className="bg-gray-800/50 p-4 rounded-xl text-center">
+                <p className="text-2xl font-bold text-indigo-400">
+                  {announcements.filter(a => a.ownerEmail === currentUser.email).length}
+                </p>
+                <p className="text-sm text-gray-400">Объявлений</p>
+              </div>
+              <div className="bg-gray-800/50 p-4 rounded-xl text-center">
+                <p className="text-2xl font-bold text-green-400">
+                  {announcements.reduce((sum, a) => sum + (a.likes?.length || 0), 0)}
+                </p>
+                <p className="text-sm text-gray-400">Лайков</p>
+              </div>
+              <div className="bg-gray-800/50 p-4 rounded-xl text-center">
+                <p className="text-2xl font-bold text-purple-400">
+                  {announcements.reduce((sum, a) => sum + (a.comments?.length || 0), 0)}
+                </p>
+                <p className="text-sm text-gray-400">Комментариев</p>
+              </div>
+            </div>
+
+            {!editingProfile ? (
+              <button
+                onClick={() => setEditingProfile(true)}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl mb-8 flex items-center justify-center gap-2"
+              >
+                <Edit size={18} /> Редактировать
+              </button>
+            ) : (
+              <form onSubmit={handleEditProfile} className="mb-8 space-y-4">
+                <div>
+                  <label className="block mb-2 text-gray-300">Имя</label>
+                  <input
+                    value={profileData.name}
+                    onChange={(e) => setProfileData(prev => ({ ...prev, name: e.target.value }))}
+                    className="w-full p-3 bg-gray-800 border border-gray-700 rounded-lg text-white"
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <button type="submit" className="flex-1 bg-green-600 py-3 rounded-xl">
+                    Сохранить
+                  </button>
+                  <button type="button" onClick={() => setEditingProfile(false)} className="flex-1 bg-gray-700 py-3 rounded-xl">
+                    Отмена
+                  </button>
+                </div>
+              </form>
+            )}
+
+            <div>
+              <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                <Star size={20} className="text-yellow-400" fill="currentColor" /> Отзывы
+              </h3>
+
+              <div className="space-y-4 mb-6">
+                {reviews.map(r => (
+                  <div key={r.id} className="bg-gray-800 p-4 rounded-xl">
+                    <div className="flex justify-between mb-2">
+                      <span className="font-semibold">{r.user}</span>
+                      <span className="text-yellow-400">{'★'.repeat(r.rating)}</span>
+                    </div>
+                    <p className="text-gray-300 text-sm">{r.text}</p>
+                    <p className="text-xs text-gray-500 mt-1">{r.date}</p>
+                  </div>
+                ))}
+              </div>
+
+              <form onSubmit={addReview} className="flex flex-col gap-3">
+                <textarea
+                  value={newReviewText}
+                  onChange={e => setNewReviewText(e.target.value)}
+                  placeholder="Напишите отзыв..."
+                  className="w-full p-3 bg-gray-800 border border-gray-700 rounded-xl text-white min-h-[80px]"
+                />
+                <button
+                  type="submit"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white py-3 rounded-xl"
+                  disabled={!newReviewText.trim()}
+                >
+                  Добавить отзыв
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Просмотр чужого профиля */}
+      {showViewedProfile && viewedUser && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 relative border border-purple-500/30">
+            <button 
+              onClick={() => setShowViewedProfile(false)} 
+              className="absolute top-4 right-4 text-gray-400 hover:text-white"
+            >
+              <X size={28} />
+            </button>
+
+            <div className="flex flex-col items-center mt-8 mb-8">
+              <div className="w-28 h-28 rounded-full bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center text-white text-5xl font-bold mb-4 shadow-lg">
+                {viewedUser.name[0].toUpperCase()}
+              </div>
+              <h2 className="text-3xl font-bold text-white">{viewedUser.name}</h2>
+              <p className="text-gray-400 mt-1">{viewedUser.email}</p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4 mb-8">
+              <div className="bg-gray-800/50 p-4 rounded-xl text-center">
+                <p className="text-2xl font-bold text-indigo-400">
+                  {announcements.filter(a => a.ownerEmail === viewedUser.email).length}
+                </p>
+                <p className="text-sm text-gray-400">Объявлений</p>
+              </div>
+              <div className="bg-gray-800/50 p-4 rounded-xl text-center">
+                <p className="text-2xl font-bold text-green-400">
+                  {announcements.reduce((sum, a) => sum + (a.likes?.length || 0), 0)}
+                </p>
+                <p className="text-sm text-gray-400">Лайков</p>
+              </div>
+              <div className="bg-gray-800/50 p-4 rounded-xl text-center">
+                <p className="text-2xl font-bold text-purple-400">
+                  {announcements.reduce((sum, a) => sum + (a.comments?.length || 0), 0)}
+                </p>
+                <p className="text-sm text-gray-400">Комментариев</p>
+              </div>
+            </div>
+
+            <p className="text-center text-gray-400 py-4 mt-4">
+              Это профиль другого пользователя
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Модалка новости */}
+      {showNewsModal && selectedNews && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6 relative border border-gray-700">
+            <button onClick={() => setShowNewsModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white">
+              <X size={28} />
+            </button>
+
+            <h2 className="text-2xl font-bold mb-3 text-white">{selectedNews.title}</h2>
+            <p className="text-sm text-gray-400 mb-4">{selectedNews.time}</p>
+            <p className="text-gray-300 mb-6">{selectedNews.text}</p>
+
+            <div className="space-y-4 mb-6">
+              {(newsComments[selectedNews.id] ?? []).map((comm, idx) => (
+                <div key={idx} className="bg-gray-800 p-4 rounded-xl">
+                  <p 
+                    className="font-semibold text-indigo-300 cursor-pointer hover:underline"
+                    onClick={() => openViewedProfile(comm.user, comm.userEmail)}
+                  >
+                    {comm.user}
+                  </p>
+                  <p className="text-gray-300 mt-1">{comm.text}</p>
+                </div>
+              ))}
+              {(newsComments[selectedNews.id] ?? []).length === 0 && (
+                <p className="text-gray-500 text-center italic">Пока нет комментариев</p>
+              )}
+            </div>
+
+            {currentUser ? (
+              <form onSubmit={handleNewsComment} className="flex gap-3 sticky bottom-0 bg-gray-900 pt-4">
+                <input
+                  type="text"
+                  placeholder="Напишите комментарий..."
+                  value={commentText[selectedNews.id] || ''}
+                  onChange={(e) => setCommentText(prev => ({ ...prev, [selectedNews.id]: e.target.value }))}
+                  className="flex-1 p-4 rounded-xl bg-gray-800 border border-gray-700 text-white text-base"
+                />
+                <button type="submit" className="bg-blue-600 px-6 py-4 rounded-xl hover:bg-blue-700">
+                  <MessageCircle size={24} />
+                </button>
+              </form>
+            ) : (
+              <p className="text-center text-gray-400 py-4">Войдите, чтобы комментировать</p>
+            )}
+          </div>
+        </div>
+      )}
 
       <footer className="bg-gray-900 dark:bg-black text-white py-6 text-center mt-auto text-sm">
         © 2026 Тверь Маркет • Сделано с ❤️ в Твери
