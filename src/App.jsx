@@ -39,7 +39,6 @@ function App() {
 
   const IMGBB_API_KEY = import.meta.env.VITE_IMGBB_KEY || "5ab97e3a3c6c71a8c1dce30eceb8b9f3";
 
-  // Telegram + фикс мобильных отступов
   useEffect(() => {
     if (window.Telegram?.WebApp) {
       const tg = window.Telegram.WebApp;
@@ -54,7 +53,7 @@ function App() {
     if (tgUser) {
       const user = {
         telegramId: tgUser.id,
-        name: tgUser.first_name + (tgUser.last_name ? ' ' + tgUser.last_name : '') || 'Пользователь',
+        name: (tgUser.first_name + (tgUser.last_name ? ' ' + tgUser.last_name : '')) || 'Пользователь',
         username: tgUser.username || '',
         photoUrl: tgUser.photo_url || null,
       };
@@ -92,15 +91,9 @@ function App() {
   const handleAddAdSubmit = async (e) => {
     e.preventDefault();
 
-    if (!currentUser) {
-      alert("Пользователь не найден");
-      return;
-    }
+    console.log("Состояние newAd при отправке:", newAd);
 
     const { title, price, location, district, category, description, isUrgent } = newAd;
-
-    // Отладка — всегда смотри в консоль
-    console.log("Отправка объявления:", { title, price, location, district, category, isUrgent, file: !!selectedFile });
 
     if (!title?.trim() || !price?.trim() || !location?.trim()) {
       alert("Заполните название, цену и местоположение!");
@@ -414,7 +407,7 @@ function App() {
         ) : null}
       </main>
 
-      {/* Модалка добавления */}
+      {/* Модалка добавления объявления */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 backdrop-blur-md p-4">
           <div className="bg-gradient-to-br from-gray-900 via-black to-gray-950 rounded-3xl w-full max-w-lg p-8 relative border border-green-500/40 shadow-2xl shadow-green-500/30 max-h-[92dvh] overflow-y-auto">
@@ -435,6 +428,7 @@ function App() {
                   onChange={handleAddAdChange}
                   required
                   className="w-full p-4 bg-black/60 border border-green-500/30 rounded-xl text-white text-lg focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-500/30 transition"
+                  placeholder="Например: iPhone 13 Pro"
                 />
               </div>
 
@@ -447,6 +441,7 @@ function App() {
                     onChange={handleAddAdChange}
                     required
                     className="w-full p-4 bg-black/60 border border-green-500/30 rounded-xl text-white text-lg focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-500/30 transition"
+                    placeholder="5000 ₽"
                   />
                 </div>
                 <div>
@@ -502,7 +497,7 @@ function App() {
 
               <div>
                 <label className="block mb-2 text-gray-300 text-lg flex items-center gap-3">
-                  <Upload size={24} /> Фото
+                  <Upload size={24} /> Фото (опционально)
                 </label>
                 <input
                   type="file"
@@ -511,22 +506,22 @@ function App() {
                   disabled={uploading}
                   className="w-full p-4 bg-black/60 border border-green-500/30 rounded-xl text-white text-lg file:bg-green-600 file:text-white file:border-0 file:rounded-xl file:px-6 file:py-3 file:cursor-pointer file:font-medium"
                 />
-                {preview && <img src={preview} alt="Превью" className="mt-4 max-h-48 rounded-2xl mx-auto border-2 border-green-500/40" />}
+                {preview && <img src={preview} alt="Превью" className="mt-4 max-h-40 rounded-2xl mx-auto border-2 border-green-500/40" />}
               </div>
 
               <button
                 type="submit"
                 disabled={uploading}
-                className="w-full bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 hover:from-green-700 hover:via-emerald-700 hover:to-teal-700 text-white py-5 rounded-2xl font-bold text-2xl transition-all shadow-xl hover:shadow-green-500/50"
+                className="w-full bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 hover:from-green-700 hover:via-emerald-700 hover:to-teal-700 text-white py-5 rounded-2xl font-bold text-2xl transition-all shadow-xl hover:shadow-green-500/50 disabled:opacity-50"
               >
-                {uploading ? 'Загружаю...' : 'Опубликовать 🔥'}
+                {uploading ? 'Загружаю фото...' : 'Опубликовать 🔥'}
               </button>
             </form>
           </div>
         </div>
       )}
 
-      {/* Красивый полный профиль */}
+      {/* Полный красивый профиль */}
       {showProfileModal && currentUser && (
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 backdrop-blur-md p-4">
           <div className="bg-gradient-to-br from-gray-900 via-black to-gray-950 rounded-3xl w-full max-w-4xl p-10 relative border border-purple-500/40 shadow-2xl shadow-purple-600/30 max-h-[90dvh] overflow-y-auto">
