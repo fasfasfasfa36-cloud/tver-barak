@@ -41,8 +41,9 @@ function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [gettingLocation, setGettingLocation] = useState(false);
 
-  // Для редактирования профиля
+  // Состояние для редактирования профиля
   const [editForm, setEditForm] = useState({
     name: '',
     bio: '',
@@ -89,7 +90,7 @@ function App() {
     localStorage.setItem('announcements', JSON.stringify(announcements));
   }, [announcements]);
 
-  // Синхронизация editForm с currentUser при открытии редактирования
+  // Синхронизация формы редактирования с текущим пользователем
   useEffect(() => {
     if (showEditProfileModal && currentUser) {
       setEditForm({
@@ -134,7 +135,58 @@ function App() {
 
   const openEditProfile = () => {
     setShowEditProfileModal(true);
-    setShowProfileModal(false); // закрываем профиль, открываем редактирование
+    setShowProfileModal(false);
+  };
+
+  const getLocation = () => {
+    if (!navigator.geolocation) {
+      alert("Геолокация не поддерживается");
+      return;
+    }
+
+    setGettingLocation(true);
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`
+          );
+          const data = await res.json();
+
+          if (data?.display_name) {
+            const address = data.display_name.split(', ').slice(0, 3).join(', ');
+            let detectedDistrict = 'Центральный';
+
+            const lower = address.toLowerCase();
+            if (lower.includes('заволжск') || lower.includes('заволжье')) detectedDistrict = 'Заволжский';
+            if (lower.includes('пролетарск') || lower.includes('пролетарий')) detectedDistrict = 'Пролетарский';
+            if (lower.includes('московск') || lower.includes('москва')) detectedDistrict = 'Московский';
+
+            setNewAd(prev => ({
+              ...prev,
+              location: address,
+              district: detectedDistrict
+            }));
+
+            alert(`Местоположение: ${address}`);
+          } else {
+            alert("Не удалось определить адрес");
+          }
+        } catch (err) {
+          console.error(err);
+          alert("Ошибка геолокации");
+        } finally {
+          setGettingLocation(false);
+        }
+      },
+      (err) => {
+        alert("Доступ к геолокации запрещён");
+        setGettingLocation(false);
+      }
+    );
   };
 
   const handleAuth = (e) => {
@@ -197,18 +249,14 @@ function App() {
     setCurrentUser(updatedUser);
     localStorage.setItem('currentUser', JSON.stringify(updatedUser));
 
-    // Если пользователь из Telegram — можно обновить и в Telegram, но пока оставим
     alert("Профиль обновлён!");
     setShowEditProfileModal(false);
-    setShowProfileModal(true); // возвращаемся в профиль
+    setShowProfileModal(true);
   };
 
   const handleEditChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setEditForm(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
+    const { name, value } = e.target;
+    setEditForm(prev => ({ ...prev, [name]: value }));
   };
 
   const handleEditFileChange = (e) => {
@@ -556,6 +604,146 @@ function App() {
                 <>Уже есть аккаунт? <button onClick={() => setAuthMode('login')} className="text-blue-400 hover:underline">Войти</button></>
               )}
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Модалка добавления объявления */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 backdrop-blur-md p-4">
+          <div className="bg-gradient-to-br from-gray-900 via-black to-gray-950 rounded-3xl w-full max-w-lg p-8 relative border border-green-500/40 shadow-2xl shadow-green-500/30 max-h-[92dvh] overflow-y-auto">
+            <button onClick={() => setShowAddModal(false)} className="absolute top-5 right-5 text-gray-400 hover:text-green-400 transition">
+              <X size={32} />
+            </button>
+
+            <h2 className="text-4xl font-extrabold text-center mb-8 bg-gradient-to-r from-green-400 to-emerald-400 bg-clip-text text-transparent">
+              Новое объявление 🔥
+            </h2>
+
+            <form onSubmit={handleAddAdSubmit} className="space-y-6">
+              <div>
+                <label className="block mb-2 text-gray-300 text-lg">Название *</label>
+                <input
+                  name="title"
+                  value={newAd.title}
+                  onChange={handleAddAdChange}
+                  required
+                  className="w-full p-4 bg-black/60 border border-green-500/30 rounded-xl text-white text-lg focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-500/30 transition"
+                  placeholder="Например: iPhone 13 Pro"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-5">
+                <div>
+                  <label className="block mb-2 text-gray-300 text-lg">Цена *</label>
+                  <input
+                    name="price"
+                    value={newAd.price}
+                    onChange={handleAddAdChange}
+                    required
+                    className="w-full p-4 bg-black/60 border border-green-500/30 rounded-xl text-white text-lg focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-500/30 transition"
+                    placeholder="5000 ₽"
+                  />
+                </div>
+                <div>
+                  <label className="block mb-2 text-gray-300 text-lg">Местоположение *</label>
+                  <div className="relative">
+                    <input
+                      name="location"
+                      value={newAd.location}
+                      onChange={handleAddAdChange}
+                      required
+                      className="w-full p-4 bg-black/60 border border-green-500/30 rounded-xl text-white text-lg focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-500/30 transition pr-12"
+                      placeholder="Улица Ленина, 10"
+                    />
+                    <button
+                      type="button"
+                      onClick={getLocation}
+                      disabled={gettingLocation}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-green-600 hover:bg-green-700 rounded-full text-white transition"
+                    >
+                      {gettingLocation ? (
+                        <span className="animate-spin inline-block w-5 h-5 border-2 border-white border-t-transparent rounded-full" />
+                      ) : (
+                        <Navigation size={20} />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block mb-2 text-gray-300 text-lg">Район</label>
+                <select
+                  name="district"
+                  value={newAd.district}
+                  onChange={handleAddAdChange}
+                  className="w-full p-4 bg-black/60 border border-green-500/30 rounded-xl text-white text-lg focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-500/30 transition"
+                >
+                  {districts.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="block mb-2 text-gray-300 text-lg">Категория</label>
+                <select
+                  name="category"
+                  value={newAd.category}
+                  onChange={handleAddAdChange}
+                  className="w-full p-4 bg-black/60 border border-green-500/30 rounded-xl text-white text-lg focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-500/30 transition"
+                >
+                  {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <input
+                  type="checkbox"
+                  id="isUrgent"
+                  name="isUrgent"
+                  checked={newAd.isUrgent}
+                  onChange={handleAddAdChange}
+                  className="w-6 h-6 accent-green-500"
+                />
+                <label htmlFor="isUrgent" className="text-xl text-green-400 font-medium cursor-pointer flex items-center gap-3">
+                  <Flame size={28} className="animate-pulse" /> Срочно!
+                </label>
+              </div>
+
+              <div>
+                <label className="block mb-2 text-gray-300 text-lg">Описание</label>
+                <textarea
+                  name="description"
+                  value={newAd.description}
+                  onChange={handleAddAdChange}
+                  rows={5}
+                  className="w-full p-4 bg-black/60 border border-green-500/30 rounded-xl text-white text-lg focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-500/30 transition"
+                  placeholder="Подробно..."
+                />
+              </div>
+
+              <div>
+                <label className="block mb-2 text-gray-300 text-lg flex items-center gap-3">
+                  <Upload size={24} /> Фото (опционально)
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  disabled={uploading}
+                  className="w-full p-4 bg-black/60 border border-green-500/30 rounded-xl text-white text-lg file:bg-green-600 file:text-white file:border-0 file:rounded-xl file:px-6 file:py-3 file:cursor-pointer file:font-medium"
+                />
+                {preview && <img src={preview} alt="Превью" className="mt-4 max-h-40 rounded-2xl mx-auto border-2 border-green-500/40" />}
+              </div>
+
+              <button
+                type="submit"
+                disabled={uploading}
+                className="w-full bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 hover:from-green-700 hover:via-emerald-700 hover:to-teal-700 text-white py-5 rounded-2xl font-bold text-2xl transition-all shadow-xl hover:shadow-green-500/50 disabled:opacity-50"
+              >
+                {uploading ? 'Загружаю фото...' : 'Опубликовать 🔥'}
+              </button>
+            </form>
           </div>
         </div>
       )}
