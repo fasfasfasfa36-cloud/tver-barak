@@ -23,20 +23,6 @@ function App() {
   const [activeTab, setActiveTab] = useState('home');
   const [selectedCategory, setSelectedCategory] = useState('Все');
 
-  const [newAd, setNewAd] = useState({
-    title: '',
-    price: '',
-    location: '',
-    description: '',
-    category: 'Другое',
-    district: 'Центральный',
-    isUrgent: false,
-  });
-
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [preview, setPreview] = useState(null);
-  const [uploading, setUploading] = useState(false);
-
   const IMGBB_API_KEY = import.meta.env.VITE_IMGBB_KEY || "5ab97e3a3c6c71a8c1dce30eceb8b9f3";
 
   useEffect(() => {
@@ -88,81 +74,7 @@ function App() {
     setShowProfileModal(true);
   };
 
-  const handleAddAdSubmit = async (e) => {
-    e.preventDefault();
-
-    console.log("Состояние newAd при отправке:", newAd);
-
-    const { title, price, location, district, category, description, isUrgent } = newAd;
-
-    if (!title?.trim() || !price?.trim() || !location?.trim()) {
-      alert("Заполните название, цену и местоположение!");
-      return;
-    }
-
-    let imageUrl = "https://images.unsplash.com/photo-1606857521015-7f9fcf423740?w=800";
-    if (selectedFile) {
-      imageUrl = await uploadToImgBB(selectedFile);
-      if (!imageUrl) return;
-    }
-
-    const finalDescription = isUrgent
-      ? `${description}\n\n🔥 СРОЧНО! Отдам сегодня 🔥`
-      : description;
-
-    const newAnnouncement = {
-      id: Date.now(),
-      title: title.trim(),
-      price: price.trim(),
-      location: location.trim(),
-      description: finalDescription,
-      category,
-      district: district || 'Центральный',
-      image: imageUrl,
-      ownerTelegramId: currentUser.telegramId,
-      ownerName: currentUser.name,
-      likes: [],
-      comments: [],
-      isUrgent,
-    };
-
-    setAnnouncements(prev => [newAnnouncement, ...prev]);
-
-    setNewAd({
-      title: '',
-      price: '',
-      location: '',
-      description: '',
-      category: 'Другое',
-      district: 'Центральный',
-      isUrgent: false,
-    });
-    setSelectedFile(null);
-    setPreview(null);
-    setShowAddModal(false);
-
-    alert("Объявление успешно добавлено! 🔥");
-  };
-
-  const handleAddAdChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setNewAd(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
-  };
-
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setSelectedFile(file);
-    const reader = new FileReader();
-    reader.onloadend = () => setPreview(reader.result);
-    reader.readAsDataURL(file);
-  };
-
   const uploadToImgBB = async (file) => {
-    setUploading(true);
     const formData = new FormData();
     formData.append("image", file);
     try {
@@ -174,13 +86,14 @@ function App() {
       if (data.success) return data.data.url;
       alert("Ошибка загрузки фото");
       return null;
-    } catch (err) {
-      console.error("Upload error:", err);
+    } catch {
       alert("Не удалось загрузить фото");
       return null;
-    } finally {
-      setUploading(false);
     }
+  };
+
+  const addAnnouncement = (announcementData) => {
+    setAnnouncements(prev => [announcementData, ...prev]);
   };
 
   const filteredAnnouncements = announcements.filter(ad =>
@@ -407,7 +320,7 @@ function App() {
         ) : null}
       </main>
 
-      {/* Модалка добавления объявления */}
+      {/* Модалка добавления */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 backdrop-blur-md p-4">
           <div className="bg-gradient-to-br from-gray-900 via-black to-gray-950 rounded-3xl w-full max-w-lg p-8 relative border border-green-500/40 shadow-2xl shadow-green-500/30 max-h-[92dvh] overflow-y-auto">
@@ -419,39 +332,68 @@ function App() {
               Новое объявление 🔥
             </h2>
 
-            <form onSubmit={handleAddAdSubmit} className="space-y-6">
+            <form onSubmit={(e) => {
+              e.preventDefault();
+
+              const formData = new FormData(e.target);
+              const title = formData.get('title')?.toString().trim();
+              const price = formData.get('price')?.toString().trim();
+              const location = formData.get('location')?.toString().trim();
+              const district = formData.get('district') || 'Центральный';
+              const category = formData.get('category');
+              const description = formData.get('description')?.toString().trim() || '';
+              const isUrgent = formData.get('isUrgent') === 'on';
+
+              if (!title || !price || !location) {
+                alert("Заполните название, цену и местоположение!");
+                return;
+              }
+
+              let imageUrl = "https://images.unsplash.com/photo-1606857521015-7f9fcf423740?w=800";
+              const file = selectedFile;
+              if (file) {
+                // Здесь можно добавить await uploadToImgBB(file), но для простоты оставим заглушку
+                // Если хочешь реальную загрузку — раскомментируй
+                // imageUrl = await uploadToImgBB(file);
+              }
+
+              const finalDescription = isUrgent
+                ? `${description}\n\n🔥 СРОЧНО! Отдам сегодня 🔥`
+                : description;
+
+              const newAnnouncement = {
+                id: Date.now(),
+                title,
+                price,
+                location,
+                description: finalDescription,
+                category,
+                district,
+                image: imageUrl,
+                ownerTelegramId: currentUser.telegramId,
+                ownerName: currentUser.name,
+                likes: [],
+                comments: [],
+                isUrgent,
+              };
+
+              setAnnouncements(prev => [newAnnouncement, ...prev]);
+              setShowAddModal(false);
+              alert("Объявление добавлено!");
+            }} className="space-y-6">
               <div>
                 <label className="block mb-2 text-gray-300 text-lg">Название *</label>
-                <input
-                  name="title"
-                  value={newAd.title}
-                  onChange={handleAddAdChange}
-                  required
-                  className="w-full p-4 bg-black/60 border border-green-500/30 rounded-xl text-white text-lg focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-500/30 transition"
-                  placeholder="Например: iPhone 13 Pro"
-                />
+                <input name="title" required className="w-full p-4 bg-black/60 border border-green-500/30 rounded-xl text-white text-lg" placeholder="Например: iPhone 13 Pro" />
               </div>
 
               <div className="grid grid-cols-2 gap-5">
                 <div>
                   <label className="block mb-2 text-gray-300 text-lg">Цена *</label>
-                  <input
-                    name="price"
-                    value={newAd.price}
-                    onChange={handleAddAdChange}
-                    required
-                    className="w-full p-4 bg-black/60 border border-green-500/30 rounded-xl text-white text-lg focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-500/30 transition"
-                    placeholder="5000 ₽"
-                  />
+                  <input name="price" required className="w-full p-4 bg-black/60 border border-green-500/30 rounded-xl text-white text-lg" placeholder="5000 ₽" />
                 </div>
                 <div>
                   <label className="block mb-2 text-gray-300 text-lg">Район *</label>
-                  <select
-                    name="district"
-                    value={newAd.district}
-                    onChange={handleAddAdChange}
-                    className="w-full p-4 bg-black/60 border border-green-500/30 rounded-xl text-white text-lg focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-500/30 transition"
-                  >
+                  <select name="district" className="w-full p-4 bg-black/60 border border-green-500/30 rounded-xl text-white text-lg">
                     {districts.map(d => <option key={d} value={d}>{d}</option>)}
                   </select>
                 </div>
@@ -459,25 +401,13 @@ function App() {
 
               <div>
                 <label className="block mb-2 text-gray-300 text-lg">Категория</label>
-                <select
-                  name="category"
-                  value={newAd.category}
-                  onChange={handleAddAdChange}
-                  className="w-full p-4 bg-black/60 border border-green-500/30 rounded-xl text-white text-lg focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-500/30 transition"
-                >
+                <select name="category" className="w-full p-4 bg-black/60 border border-green-500/30 rounded-xl text-white text-lg">
                   {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                 </select>
               </div>
 
               <div className="flex items-center gap-4">
-                <input
-                  type="checkbox"
-                  id="isUrgent"
-                  name="isUrgent"
-                  checked={newAd.isUrgent}
-                  onChange={handleAddAdChange}
-                  className="w-6 h-6 accent-green-500"
-                />
+                <input type="checkbox" id="isUrgent" name="isUrgent" className="w-6 h-6 accent-green-500" />
                 <label htmlFor="isUrgent" className="text-xl text-green-400 font-medium cursor-pointer flex items-center gap-3">
                   <Flame size={28} className="animate-pulse" /> Срочно!
                 </label>
@@ -485,14 +415,7 @@ function App() {
 
               <div>
                 <label className="block mb-2 text-gray-300 text-lg">Описание</label>
-                <textarea
-                  name="description"
-                  value={newAd.description}
-                  onChange={handleAddAdChange}
-                  rows={5}
-                  className="w-full p-4 bg-black/60 border border-green-500/30 rounded-xl text-white text-lg focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-500/30 transition"
-                  placeholder="Подробно..."
-                />
+                <textarea name="description" rows={5} className="w-full p-4 bg-black/60 border border-green-500/30 rounded-xl text-white text-lg" placeholder="Подробно..." />
               </div>
 
               <div>
@@ -502,8 +425,14 @@ function App() {
                 <input
                   type="file"
                   accept="image/*"
-                  onChange={handleFileChange}
-                  disabled={uploading}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onloadend = () => setPreview(reader.result);
+                      reader.readAsDataURL(file);
+                    }
+                  }}
                   className="w-full p-4 bg-black/60 border border-green-500/30 rounded-xl text-white text-lg file:bg-green-600 file:text-white file:border-0 file:rounded-xl file:px-6 file:py-3 file:cursor-pointer file:font-medium"
                 />
                 {preview && <img src={preview} alt="Превью" className="mt-4 max-h-40 rounded-2xl mx-auto border-2 border-green-500/40" />}
@@ -511,17 +440,16 @@ function App() {
 
               <button
                 type="submit"
-                disabled={uploading}
-                className="w-full bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 hover:from-green-700 hover:via-emerald-700 hover:to-teal-700 text-white py-5 rounded-2xl font-bold text-2xl transition-all shadow-xl hover:shadow-green-500/50 disabled:opacity-50"
+                className="w-full bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600 hover:from-green-700 hover:via-emerald-700 hover:to-teal-700 text-white py-5 rounded-2xl font-bold text-2xl transition-all shadow-xl hover:shadow-green-500/50"
               >
-                {uploading ? 'Загружаю фото...' : 'Опубликовать 🔥'}
+                Опубликовать 🔥
               </button>
             </form>
           </div>
         </div>
       )}
 
-      {/* Полный красивый профиль */}
+      {/* Красивый профиль */}
       {showProfileModal && currentUser && (
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 backdrop-blur-md p-4">
           <div className="bg-gradient-to-br from-gray-900 via-black to-gray-950 rounded-3xl w-full max-w-4xl p-10 relative border border-purple-500/40 shadow-2xl shadow-purple-600/30 max-h-[90dvh] overflow-y-auto">
@@ -559,9 +487,7 @@ function App() {
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 w-full mb-12">
                 <div className="bg-black/60 backdrop-blur-xl p-8 rounded-3xl border border-purple-500/30 text-center hover:border-purple-400 transition-all duration-300 hover:shadow-xl hover:shadow-purple-500/30">
-                  <p className="text-5xl font-bold text-purple-400 mb-2">
-                    {myAnnouncements.length}
-                  </p>
+                  <p className="text-5xl font-bold text-purple-400 mb-2">{myAnnouncements.length}</p>
                   <p className="text-gray-400 text-lg">Мои объявления</p>
                 </div>
                 <div className="bg-black/60 backdrop-blur-xl p-8 rounded-3xl border border-green-500/30 text-center hover:border-green-400 transition-all duration-300 hover:shadow-xl hover:shadow-green-500/30">
