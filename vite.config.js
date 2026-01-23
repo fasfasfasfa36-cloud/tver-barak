@@ -1,11 +1,8 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
 
+// https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
-  server: {
-    hmr: {
-      overlay: false,  // ← отключает красные оверлеи ошибок в браузере
-    },
-  },
-})
+  base: './',  // Это делает все пути относительными
+});                                  
