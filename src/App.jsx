@@ -322,40 +322,52 @@ function App() {
 
       {/* Модалка добавления */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 backdrop-blur-md p-4">
-          <div className="bg-gradient-to-br from-gray-900 via-black to-gray-950 rounded-3xl w-full max-w-lg p-8 relative border border-green-500/40 shadow-2xl shadow-green-500/30 max-h-[92dvh] overflow-y-auto">
-            <button onClick={() => setShowAddModal(false)} className="absolute top-5 right-5 text-gray-400 hover:text-green-400 transition">
-              <X size={32} />
-            </button>
+  <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+    <div className="bg-gray-900 rounded-3xl w-full max-w-md p-8 relative">
+      <button 
+        onClick={() => setShowAddModal(false)}
+        className="absolute top-4 right-4 text-gray-400 hover:text-white"
+      >
+        <X size={28} />
+      </button>
 
-            <h2 className="text-4xl font-extrabold text-center mb-8 bg-gradient-to-r from-green-400 to-emerald-400 bg-clip-text text-transparent">
-              Новое объявление 🔥
-            </h2>
+      <h2 className="text-3xl font-bold text-white mb-6 text-center">
+        Новое объявление
+      </h2>
 
-            <form onSubmit={(e) => {
-              e.preventDefault();
-
-              const formData = new FormData(e.target);
-              const title = formData.get('title')?.toString().trim();
-              const price = formData.get('price')?.toString().trim();
-              const location = formData.get('location')?.toString().trim();
-              const district = formData.get('district') || 'Центральный';
-              const category = formData.get('category');
-              const description = formData.get('description')?.toString().trim() || '';
-              const isUrgent = formData.get('isUrgent') === 'on';
-
-              if (!title || !price || !location) {
-                alert("Заполните название, цену и местоположение!");
-                return;
-              }
-
-              let imageUrl = "https://images.unsplash.com/photo-1606857521015-7f9fcf423740?w=800";
-              const file = selectedFile;
-              if (file) {
-                // Здесь можно добавить await uploadToImgBB(file), но для простоты оставим заглушку
-                // Если хочешь реальную загрузку — раскомментируй
-                // imageUrl = await uploadToImgBB(file);
-              }
+      <form onSubmit={(e) => {
+        e.preventDefault();
+        alert("Форма отправлена! (пока просто тест)");
+        setShowAddModal(false);
+      }} className="space-y-5">
+        <input 
+          type="text" 
+          placeholder="Название *" 
+          required 
+          className="w-full p-4 bg-gray-800 border border-gray-700 rounded-xl text-white" 
+        />
+        <input 
+          type="text" 
+          placeholder="Цена *" 
+          required 
+          className="w-full p-4 bg-gray-800 border border-gray-700 rounded-xl text-white" 
+        />
+        <input 
+          type="text" 
+          placeholder="Местоположение *" 
+          required 
+          className="w-full p-4 bg-gray-800 border border-gray-700 rounded-xl text-white" 
+        />
+        <button 
+          type="submit"
+          className="w-full bg-green-600 py-4 rounded-xl text-white font-bold hover:bg-green-700"
+        >
+          Опубликовать 🔥
+        </button>
+      </form>
+    </div>
+  </div>
+)}
 
               const finalDescription = isUrgent
                 ? `${description}\n\n🔥 СРОЧНО! Отдам сегодня 🔥`
