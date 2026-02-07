@@ -1,82 +1,11 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-/* Глобальные стили */
-body {
-  @apply bg-gray-50 text-gray-900;
-  transition: background-color 0.3s ease, color 0.3s ease;
-}
-
-/* Плавные переходы */
-* {
-  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
-}
-
-/* Тёмная тема — базовые изменения */
-.dark {
-  @apply bg-gray-950 text-gray-100;
-}
-
-/* Фикс контраста: делаем текст светлым и видимым без @apply в циклах */
-.dark .text-gray-900,
-.dark .text-gray-800,
-.dark .text-gray-700,
-.dark .text-gray-600,
-.dark .text-gray-500,
-.dark .text-gray-400,
-.dark .text-gray-300 {
-  color: #f3f4f6;  /* gray-100 в hex — очень светлый, читаемый */
-}
-
-/* Более мягкий серый для второстепенного текста (если нужно) */
-.dark .text-muted {
-  color: #d1d5db;  /* gray-300 */
-}
-
-/* Плейсхолдеры в инпутах — остаются чуть серыми, но видимыми */
-.dark input::placeholder,
-.dark textarea::placeholder,
-.dark select option {
-  color: #9ca3af !important;  /* gray-500 в dark, читаемо */
-}
-
-/* Фоны и бордеры форм */
-.dark input,
-.dark textarea,
-.dark select {
-  @apply bg-gray-800 border-gray-600 text-gray-100;
-}
-
-.dark input:focus,
-.dark textarea:focus,
-.dark select:focus {
-  @apply border-blue-500 ring-2 ring-blue-500/30;
-}
-
-/* Другие корректировки */
-.dark .bg-white {
-  @apply bg-gray-800;
-}
-
-.dark .border-gray-300 {
-  @apply border-gray-600;
-}
-
-/* Цвета акцентов */
-.dark .text-green-600 {
-  @apply text-green-400;
-}
-
-.dark .text-red-500 {
-  @apply text-red-400;
-}
-
-/* Скрытие скроллбара */
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
-}
-.scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+@import "tailwindcss";
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
