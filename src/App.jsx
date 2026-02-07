@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Sun, Moon, Heart, MessageCircle, MapPin, Eye,
   X, PlusCircle, Upload, UserCircle, Edit, Navigation, Flame,
   ArrowLeft, Grid, LogIn, Search, Repeat, Phone, Share2, Bell, Trash2, Send,
-  ChevronLeft, ChevronRight, AlertCircle
+  ChevronLeft, ChevronRight, AlertCircle, ArrowUp, Crown, Star, Sparkles, BarChart2
 } from 'lucide-react';
 
 const categories = ["Все", "Электроника", "Недвижимость", "Одежда", "Авто", "Услуги", "Отдам даром"];
@@ -25,6 +25,8 @@ function App() {
   const [showFavorites, setShowFavorites] = useState(false);
   const [showChatModal, setShowChatModal] = useState(false);
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
+  const [showSellerAdsModal, setShowSellerAdsModal] = useState(false);
+  const [selectedSellerId, setSelectedSellerId] = useState(null);
   const [chatAnnouncement, setChatAnnouncement] = useState(null);
   const [chatMessage, setChatMessage] = useState('');
   const [selectedAnnouncement, setSelectedAnnouncement] = useState(null);
@@ -33,6 +35,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('home');
   const [selectedCategory, setSelectedCategory] = useState('Все');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedDistrict, setSelectedDistrict] = useState('Все районы');
   const [priceMin, setPriceMin] = useState('');
   const [priceMax, setPriceMax] = useState('');
@@ -50,6 +53,8 @@ function App() {
     isUrgent: false,
     images: [],
     status: 'active',
+    boostedUntil: null,
+    reports: 0,
   });
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [previews, setPreviews] = useState([]);
@@ -57,6 +62,7 @@ function App() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [gettingLocation, setGettingLocation] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState('Обычное');
+  const [generatingAI, setGeneratingAI] = useState(false);
   const [editForm, setEditForm] = useState({
     name: '',
     bio: '',
@@ -68,7 +74,11 @@ function App() {
   const [isOnline, setIsOnline] = useState(Math.random() > 0.4);
   const [currentImage, setCurrentImage] = useState(0);
   const [commentText, setCommentText] = useState('');
+  const [reviewStars, setReviewStars] = useState(0);
+  const [reviewText, setReviewText] = useState('');
   const IMGBB_API_KEY = import.meta.env.VITE_IMGBB_KEY || "5ab97e3a3c6c71a8c1dce30eceb8b9f3";
+  const GROQ_API_KEY = import.meta.env.VITE_GROQ_KEY || "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";
+
   const chatContainerRef = useRef(null);
 
   // Telegram + User
@@ -92,6 +102,8 @@ function App() {
           bio: '',
           district: 'Центральный',
           ratings: { average: 0, count: 0, reviews: [] },
+          isPremium: false,
+          premiumUntil: null,
         };
         setCurrentUser(user);
         localStorage.setItem('currentUser', JSON.stringify(user));
@@ -107,6 +119,35 @@ function App() {
   useEffect(() => { localStorage.setItem('chats', JSON.stringify(chats)); }, [chats]);
   useEffect(() => { localStorage.setItem('notifications', JSON.stringify(notifications)); }, [notifications]);
   useEffect(() => { localStorage.setItem('savedSearches', JSON.stringify(savedSearches)); }, [savedSearches]);
+
+  // Автобуст премиум-объявлений
+  useEffect(() => {
+    if (!currentUser?.isPremium || !currentUser.premiumUntil || currentUser.premiumUntil <= Date.now()) return;
+
+    const boostPremiumAds = () => {
+      const now = Date.now();
+      setAnnouncements(prev => prev.map(ad => {
+        if (ad.ownerTelegramId === (currentUser.telegramId || currentUser.email)) {
+          if (!ad.boostedUntil || ad.boostedUntil < now) {
+            return { ...ad, boostedUntil: now + 24 * 60 * 60 * 1000 };
+          }
+        }
+        return ad;
+      }));
+    };
+
+    boostPremiumAds();
+    const interval = setInterval(boostPremiumAds, 10 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [currentUser]);
+
+  // Debounce поиска
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   // Автоскролл чата
   useEffect(() => {
@@ -173,6 +214,8 @@ function App() {
       isUrgent: false,
       images: [],
       status: 'active',
+      boostedUntil: null,
+      reports: 0,
     });
     setSelectedFiles([]);
     setPreviews([]);
@@ -192,6 +235,8 @@ function App() {
       isUrgent: ad.isUrgent,
       images: ad.images || [ad.image],
       status: ad.status,
+      boostedUntil: ad.boostedUntil || null,
+      reports: ad.reports || 0,
     });
     setPreviews(ad.images || [ad.image]);
     setShowAddModal(true);
@@ -227,6 +272,11 @@ function App() {
   const openAnnouncement = (ad) => setSelectedAnnouncement(ad);
 
   const closeAnnouncement = () => setSelectedAnnouncement(null);
+
+  const openSellerAds = (sellerId) => {
+    setSelectedSellerId(sellerId);
+    setShowSellerAdsModal(true);
+  };
 
   const getLocation = () => {
     if (!navigator.geolocation) return alert("Геолокация не поддерживается");
@@ -264,6 +314,55 @@ function App() {
     );
   };
 
+  const generateDescription = async () => {
+    if (!newAd.title.trim()) return alert("Сначала введи название!");
+
+    const prompt = `Сгенерируй продающее описание объявления для барахолки в Твери. 
+Название: ${newAd.title}
+Цена: ${newAd.price}
+Район: ${newAd.district}
+Срочное: ${newAd.isUrgent ? 'да' : 'нет'}
+Сделай текст живым, убедительным, с эмодзи, длиной 100–200 символов.`;
+
+    setGeneratingAI(true);
+
+    try {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${GROQ_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.8,
+          max_tokens: 250,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error?.message || `HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      const generated = data.choices?.[0]?.message?.content?.trim() || '';
+
+      if (generated) {
+        setNewAd(prev => ({ ...prev, description: generated }));
+        alert("Готово! ИИ написал огонь 🔥");
+      } else {
+        alert("Ответ от ИИ пустой — попробуй другой запрос");
+      }
+    } catch (err) {
+      console.error("Groq ошибка:", err);
+      alert(`Ошибка: ${err.message}\nПроверь интернет / ключ / квоту на Groq`);
+    } finally {
+      setGeneratingAI(false);
+    }
+  };
+
   const handleAuth = (e) => {
     e.preventDefault();
     setAuthError('');
@@ -274,7 +373,14 @@ function App() {
     const users = JSON.parse(localStorage.getItem('users') || '[]');
     if (authMode === 'register') {
       if (users.find(u => u.email === email)) return setAuthError('Email уже занят');
-      const newUser = { email, name: name || email.split('@')[0], password, ratings: { average: 0, count: 0, reviews: [] } };
+      const newUser = { 
+        email, 
+        name: name || email.split('@')[0], 
+        password, 
+        ratings: { average: 0, count: 0, reviews: [] },
+        isPremium: false,
+        premiumUntil: null,
+      };
       users.push(newUser);
       localStorage.setItem('users', JSON.stringify(users));
       setCurrentUser(newUser);
@@ -330,7 +436,7 @@ function App() {
   const handleAddAdSubmit = async (e) => {
     e.preventDefault();
     if (!currentUser) return alert("Нужно войти");
-    const { title, price, phone, location, description, category, district, isUrgent, images, status } = newAd;
+    const { title, price, phone, location, description, category, district, isUrgent, images, status, boostedUntil, reports } = newAd;
     if (!title.trim() || !price.trim() || !location.trim()) return alert("Заполните название, цену и местоположение!");
     let imageUrls = images;
     if (selectedFiles.length > 0) {
@@ -359,6 +465,9 @@ function App() {
       createdAt: new Date().toISOString(),
       views: editingAnnouncement ? editingAnnouncement.views : 0,
       status: status || 'active',
+      boostedUntil: boostedUntil || null,
+      reports: reports || 0,
+      ownerRatings: editingAnnouncement ? editingAnnouncement.ownerRatings : { average: 0, count: 0, reviews: [] },
     };
     if (editingAnnouncement) {
       setAnnouncements(prev => prev.map(a => a.id === editingAnnouncement.id ? announcement : a));
@@ -380,6 +489,8 @@ function App() {
       isUrgent: false,
       images: [],
       status: 'active',
+      boostedUntil: null,
+      reports: 0,
     });
     setSelectedFiles([]);
     setPreviews([]);
@@ -397,7 +508,9 @@ function App() {
 
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files || []);
-    if (files.length > 5) return alert("Максимум 5 фото");
+    const isPremiumActive = currentUser?.isPremium && (!currentUser.premiumUntil || currentUser.premiumUntil > Date.now());
+    const maxFiles = isPremiumActive ? 10 : 5;
+    if (files.length > maxFiles) return alert(`Максимум ${maxFiles} фото! ${isPremiumActive ? '' : 'Активируй премиум для большего лимита.'}`);
     setSelectedFiles(files);
     const newPreviews = [];
     files.forEach(file => {
@@ -494,6 +607,45 @@ function App() {
     setCommentText('');
   };
 
+  const addReview = (sellerId, stars, text) => {
+    if (sellerId === (currentUser?.telegramId || currentUser?.email)) {
+      alert("Нельзя оставлять отзыв себе!");
+      return;
+    }
+    if (stars < 1 || stars > 5 || !text.trim()) {
+      alert("Поставь оценку и напиши хоть пару слов!");
+      return;
+    }
+
+    setAnnouncements(prev => prev.map(ad => {
+      if (ad.ownerTelegramId === sellerId) {
+        const currentRatings = ad.ownerRatings || { average: 0, count: 0, reviews: [] };
+        const newCount = currentRatings.count + 1;
+        const newAverage = ((currentRatings.average * currentRatings.count) + stars) / newCount;
+
+        return {
+          ...ad,
+          ownerRatings: {
+            average: parseFloat(newAverage.toFixed(1)),
+            count: newCount,
+            reviews: [...(currentRatings.reviews || []), {
+              from: currentUser.name || 'Аноним',
+              stars,
+              text,
+              date: new Date().toISOString(),
+            }],
+          },
+        };
+      }
+      return ad;
+    }));
+
+    addNotification(`Вы оставили отзыв продавцу ${selectedAnnouncement?.ownerName || 'продавцу'}! 🌟`);
+    alert("Спасибо за отзыв!");
+    setReviewStars(0);
+    setReviewText('');
+  };
+
   const saveSearch = () => {
     const search = { 
       id: Date.now(), 
@@ -521,43 +673,72 @@ function App() {
     });
   };
 
-  const addReview = (sellerId, stars, text) => {
-    if (sellerId === currentUser.telegramId || sellerId === currentUser.email) return;
-    const updatedRatings = {
-      ...currentUser.ratings,
-      reviews: [...currentUser.ratings.reviews, { from: currentUser.name, stars, text }],
-      count: currentUser.ratings.count + 1,
-      average: ((currentUser.ratings.average * currentUser.ratings.count) + stars) / (currentUser.ratings.count + 1)
-    };
-    setCurrentUser(prev => ({ ...prev, ratings: updatedRatings }));
-    localStorage.setItem('currentUser', JSON.stringify({ ...currentUser, ratings: updatedRatings }));
-  };
-
-  const filteredAndSorted = announcements.filter(ad => {
-    const matchesCategory = selectedCategory === 'Все' || ad.category === selectedCategory;
-    const matchesSearch = !searchQuery ||
-      ad.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ad.description.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesDistrict = selectedDistrict === 'Все районы' || ad.district === selectedDistrict;
-    const priceNum = parseFloat(ad.price.replace(/[^0-9.]/g, ''));
-    const min = priceMin ? parseFloat(priceMin) : -Infinity;
-    const max = priceMax ? parseFloat(priceMax) : Infinity;
-    const now = new Date();
-    const matchesDate = dateFilter === 'all' ||
-      (dateFilter === 'today' && new Date(ad.createdAt).toDateString() === now.toDateString()) ||
-      (dateFilter === 'yesterday' && new Date(ad.createdAt).toDateString() === new Date(now.setDate(now.getDate()-1)).toDateString()) ||
-      (dateFilter === 'week' && new Date(ad.createdAt) > new Date(now.setDate(now.getDate()-7)));
-    return matchesCategory && matchesSearch && matchesDistrict && priceNum >= min && priceNum <= max && matchesDate && ad.status === 'active';
-  }).sort((a, b) => {
-    if (sortBy === 'newest') return new Date(b.createdAt) - new Date(a.createdAt);
-    if (sortBy === 'priceAsc') return parseFloat(a.price.replace(/[^0-9.]/g, '')) - parseFloat(b.price.replace(/[^0-9.]/g, ''));
-    if (sortBy === 'priceDesc') return parseFloat(b.price.replace(/[^0-9.]/g, '')) - parseFloat(a.price.replace(/[^0-9.]/g, ''));
-    return 0;
-  });
+  const filteredAndSorted = useMemo(() => {
+    return announcements.filter(ad => {
+      const matchesCategory = selectedCategory === 'Все' || ad.category === selectedCategory;
+      const matchesSearch = !debouncedSearch ||
+        ad.title.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+        ad.description.toLowerCase().includes(debouncedSearch.toLowerCase());
+      const matchesDistrict = selectedDistrict === 'Все районы' || ad.district === selectedDistrict;
+      const priceNum = parseFloat(ad.price.replace(/[^0-9.]/g, ''));
+      const min = priceMin ? parseFloat(priceMin) : -Infinity;
+      const max = priceMax ? parseFloat(priceMax) : Infinity;
+      const now = new Date();
+      const matchesDate = dateFilter === 'all' ||
+        (dateFilter === 'today' && new Date(ad.createdAt).toDateString() === now.toDateString()) ||
+        (dateFilter === 'yesterday' && new Date(ad.createdAt).toDateString() === new Date(now.setDate(now.getDate()-1)).toDateString()) ||
+        (dateFilter === 'week' && new Date(ad.createdAt) > new Date(now.setDate(now.getDate()-7)));
+      return matchesCategory && matchesSearch && matchesDistrict && priceNum >= min && priceNum <= max && matchesDate && ad.status === 'active';
+    }).sort((a, b) => {
+      const now = Date.now();
+      const aBoost = a.boostedUntil && a.boostedUntil > now ? 1 : 0;
+      const bBoost = b.boostedUntil && b.boostedUntil > now ? 1 : 0;
+      if (aBoost !== bBoost) return bBoost - aBoost;
+      if (sortBy === 'newest') return new Date(b.createdAt) - new Date(a.createdAt);
+      if (sortBy === 'priceAsc') return parseFloat(a.price.replace(/[^0-9.]/g, '')) - parseFloat(b.price.replace(/[^0-9.]/g, ''));
+      if (sortBy === 'priceDesc') return parseFloat(b.price.replace(/[^0-9.]/g, '')) - parseFloat(a.price.replace(/[^0-9.]/g, ''));
+      return 0;
+    });
+  }, [announcements, debouncedSearch, selectedCategory, selectedDistrict, priceMin, priceMax, dateFilter, sortBy]);
 
   const urgent = filteredAndSorted.filter(ad => ad.isUrgent);
   const myAds = announcements.filter(a => a.ownerTelegramId === currentUser?.telegramId || a.ownerTelegramId === currentUser?.email);
   const unreadNotifs = notifications.filter(n => !n.read).length;
+
+  const getAnalytics = () => {
+    const myAnnouncements = announcements.filter(a => a.ownerTelegramId === currentUser?.telegramId || a.ownerTelegramId === currentUser?.email);
+    const totalViews = myAnnouncements.reduce((sum, ad) => sum + (ad.views || 0), 0);
+    const totalFavorites = favorites.filter(id => myAnnouncements.some(a => a.id === id)).length;
+    const activeAds = myAnnouncements.filter(a => a.status === 'active').length;
+
+    return { totalViews, totalFavorites, activeAds };
+  };
+
+  // Топ продавцов (5 лучших по рейтингу)
+  const topSellers = useMemo(() => {
+    const sellersMap = {};
+    announcements.forEach(ad => {
+      const id = ad.ownerTelegramId;
+      if (!sellersMap[id]) {
+        sellersMap[id] = {
+          name: ad.ownerName,
+          rating: ad.ownerRatings?.average || 0,
+          reviewsCount: ad.ownerRatings?.count || 0,
+          adsCount: 1,
+        };
+      } else {
+        sellersMap[id].adsCount += 1;
+        // Берём средний рейтинг из последнего объявления (для простоты)
+        sellersMap[id].rating = ad.ownerRatings?.average || sellersMap[id].rating;
+        sellersMap[id].reviewsCount = ad.ownerRatings?.count || sellersMap[id].reviewsCount;
+      }
+    });
+
+    return Object.values(sellersMap)
+      .filter(s => s.rating > 0)
+      .sort((a, b) => b.rating - a.rating || b.reviewsCount - a.reviewsCount)
+      .slice(0, 5);
+  }, [announcements]);
 
   return (
     <div className={`min-h-[100dvh] ${theme === 'dark' ? 'bg-gradient-to-br from-gray-950 via-black to-gray-900' : 'bg-gradient-to-br from-gray-50 via-white to-gray-100'} text-white flex flex-col transition-colors duration-300`}>
@@ -719,16 +900,17 @@ function App() {
                     {filteredAndSorted.map(item => (
                       <div
                         key={item.id}
-                        className="bg-gradient-to-br from-gray-900/90 to-black/90 rounded-xl overflow-hidden border border-gray-800/70 hover:border-green-600/50 transition-all duration-300 shadow-md hover:shadow-green-900/30 cursor-pointer active:scale-[0.98]"
+                        className={`bg-gradient-to-br from-gray-900/90 to-black/90 rounded-xl overflow-hidden border ${currentUser?.isPremium && (!currentUser.premiumUntil || currentUser.premiumUntil > Date.now()) ? 'border-yellow-500/50' : 'border-gray-800/70'} hover:border-green-600/50 transition-all duration-300 shadow-md hover:shadow-green-900/30 cursor-pointer active:scale-[0.98]`}
                         onClick={() => openAnnouncement(item)}
                       >
                         <div className="flex">
                           <div className="relative w-28 h-28 flex-shrink-0">
                             <img
+                              loading="lazy"
                               src={item.images?.[0] || item.image || "https://images.unsplash.com/photo-1606857521015-7f9fcf423740?w=800"}
                               alt={item.title}
                               className="w-full h-full object-cover"
-                              onError={e => e.target.src = "https://images.unsplash.com/photo-1606857521015-7f9fcf423740?w=800"}
+                              onError={e => e.target.src = "https://via.placeholder.com/150?text=Нет+фото"}
                             />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
                             {item.isUrgent && (
@@ -736,12 +918,25 @@ function App() {
                                 <Flame size={10} /> СРОЧНО
                               </div>
                             )}
+                            {item.boostedUntil && item.boostedUntil > Date.now() && (
+                              <div className="absolute top-1 left-1 bg-yellow-500/90 text-black text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm animate-pulse">
+                                <ArrowUp size={10} /> В ТОПЕ
+                              </div>
+                            )}
                           </div>
                           <div className="flex-1 p-3 flex flex-col justify-between">
                             <div>
-                              <h3 className="text-base font-semibold text-white line-clamp-2 mb-1">
-                                {item.title}
-                              </h3>
+                              <div className="flex items-center gap-2 mb-1">
+                                <h3 className="text-base font-semibold text-white line-clamp-2 flex-1">
+                                  {item.title}
+                                </h3>
+                                {item.ownerRatings && item.ownerRatings.count > 0 && (
+                                  <div className="flex items-center gap-1 text-yellow-400 text-xs">
+                                    <Star size={14} fill="currentColor" />
+                                    {item.ownerRatings.average.toFixed(1)} ({item.ownerRatings.count})
+                                  </div>
+                                )}
+                              </div>
                               <p className="text-2xl font-black text-green-400 mb-1 tracking-tight">
                                 {item.price}
                                 {(parseFloat(item.price.replace(/[^0-9.]/g, '')) === 0 ||
@@ -788,27 +983,41 @@ function App() {
                     {urgent.map(item => (
                       <div
                         key={item.id}
-                        className="bg-gradient-to-br from-gray-900/90 to-black/90 rounded-xl overflow-hidden border border-red-800/50 hover:border-red-600/60 transition-all duration-300 shadow-md hover:shadow-red-900/30 cursor-pointer active:scale-[0.98]"
+                        className={`bg-gradient-to-br from-gray-900/90 to-black/90 rounded-xl overflow-hidden border ${currentUser?.isPremium && (!currentUser.premiumUntil || currentUser.premiumUntil > Date.now()) ? 'border-yellow-500/50' : 'border-red-800/50'} hover:border-red-600/60 transition-all duration-300 shadow-md hover:shadow-red-900/30 cursor-pointer active:scale-[0.98]`}
                         onClick={() => openAnnouncement(item)}
                       >
                         <div className="flex">
                           <div className="relative w-28 h-28 flex-shrink-0">
                             <img
+                              loading="lazy"
                               src={item.images?.[0] || item.image || "https://images.unsplash.com/photo-1606857521015-7f9fcf423740?w=800"}
                               alt={item.title}
                               className="w-full h-full object-cover"
-                              onError={e => e.target.src = "https://images.unsplash.com/photo-1606857521015-7f9fcf423740?w=800"}
+                              onError={e => e.target.src = "https://via.placeholder.com/150?text=Нет+фото"}
                             />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
                             <div className="absolute top-1 right-1 bg-red-600/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm animate-pulse">
                               <Flame size={10} /> СРОЧНО
                             </div>
+                            {item.boostedUntil && item.boostedUntil > Date.now() && (
+                              <div className="absolute top-1 left-1 bg-yellow-500/90 text-black text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm animate-pulse">
+                                <ArrowUp size={10} /> В ТОПЕ
+                              </div>
+                            )}
                           </div>
                           <div className="flex-1 p-3 flex flex-col justify-between">
                             <div>
-                              <h3 className="text-base font-semibold text-white line-clamp-2 mb-1">
-                                {item.title}
-                              </h3>
+                              <div className="flex items-center gap-2 mb-1">
+                                <h3 className="text-base font-semibold text-white line-clamp-2 flex-1">
+                                  {item.title}
+                                </h3>
+                                {item.ownerRatings && item.ownerRatings.count > 0 && (
+                                  <div className="flex items-center gap-1 text-yellow-400 text-xs">
+                                    <Star size={14} fill="currentColor" />
+                                    {item.ownerRatings.average.toFixed(1)} ({item.ownerRatings.count})
+                                  </div>
+                                )}
+                              </div>
                               <p className="text-2xl font-black text-green-400 mb-1 tracking-tight">
                                 {item.price}
                                 {(parseFloat(item.price.replace(/[^0-9.]/g, '')) === 0 ||
@@ -851,7 +1060,7 @@ function App() {
 
       {/* Полный просмотр объявления */}
       {selectedAnnouncement && (
-        <div className="fixed inset-0 bg-black/95 z-[9999] flex flex-col overflow-y-auto">
+        <div className="fixed inset-0 bg-black/95 z-[9999] flex flex-col overflow-y-auto animate-[fadeIn_0.3s_ease-out_forwards]">
           <div className="sticky top-0 bg-black/90 backdrop-blur-xl border-b border-gray-800 p-4 flex items-center justify-between z-10">
             <button onClick={closeAnnouncement} className="text-gray-300 hover:text-white">
               <ArrowLeft size={28} />
@@ -864,10 +1073,11 @@ function App() {
           <div className="p-4 flex-1">
             <div className="relative rounded-2xl overflow-hidden mb-6 shadow-2xl shadow-black/50">
               <img
+                loading="lazy"
                 src={selectedAnnouncement.images?.[currentImage] || selectedAnnouncement.image || "https://images.unsplash.com/photo-1606857521015-7f9fcf423740?w=800"}
                 alt={selectedAnnouncement.title}
                 className="w-full h-80 object-cover"
-                onError={e => e.target.src = "https://images.unsplash.com/photo-1606857521015-7f9fcf423740?w=800"}
+                onError={e => e.target.src = "https://via.placeholder.com/400?text=Нет+фото"}
               />
               {selectedAnnouncement.isUrgent && (
                 <div className="absolute top-4 right-4 bg-red-600 text-white text-sm font-bold px-4 py-2 rounded-full flex items-center gap-2 shadow-lg animate-pulse">
@@ -901,11 +1111,69 @@ function App() {
               <MapPin size={20} className="text-green-400" />
               <span>{selectedAnnouncement.location} • {selectedAnnouncement.district}</span>
             </div>
-            <div className="bg-black/50 rounded-xl p-5 mb-6">
-              <p className="text-gray-200 whitespace-pre-wrap">
-                {selectedAnnouncement.description}
-              </p>
+
+            {/* Блок продавца */}
+            <div className="bg-black/50 rounded-xl p-5 mb-6 flex items-center justify-between">
+              <div>
+                <p className="font-bold text-lg flex items-center gap-2">
+                  {selectedAnnouncement.ownerName}
+                  {currentUser?.isPremium && (!currentUser.premiumUntil || currentUser.premiumUntil > Date.now()) && (
+                    <Crown size={16} className="text-yellow-400" />
+                  )}
+                </p>
+                <p className="text-sm text-gray-400">
+                  {announcements.filter(a => a.ownerTelegramId === selectedAnnouncement.ownerTelegramId).length} объявлений
+                </p>
+                {selectedAnnouncement.ownerRatings && selectedAnnouncement.ownerRatings.count > 0 && (
+                  <div className="flex items-center gap-1 mt-1 text-yellow-400 text-sm">
+                    <Star size={16} fill="currentColor" />
+                    {selectedAnnouncement.ownerRatings.average.toFixed(1)} ({selectedAnnouncement.ownerRatings.count} отзывов)
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => openSellerAds(selectedAnnouncement.ownerTelegramId)}
+                className="bg-indigo-600 hover:bg-indigo-700 px-5 py-2.5 rounded-xl text-sm font-medium transition"
+              >
+                Посмотреть все
+              </button>
             </div>
+
+            {/* Отзывы */}
+            <div className="bg-black/50 rounded-xl p-5 mb-6">
+              <h3 className="text-lg font-bold mb-4">Оставить отзыв продавцу</h3>
+              <div className="flex gap-1 mb-3">
+                {[1, 2, 3, 4, 5].map(star => (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => setReviewStars(star)}
+                    className={`text-3xl transition-transform hover:scale-110 ${star <= reviewStars ? 'text-yellow-400' : 'text-gray-600'}`}
+                  >
+                    <Star size={32} fill={star <= reviewStars ? "currentColor" : "none"} />
+                  </button>
+                ))}
+              </div>
+              <textarea
+                value={reviewText}
+                onChange={(e) => setReviewText(e.target.value)}
+                placeholder="Напишите, что думаете о продавце..."
+                className="w-full p-3 bg-gray-800 border border-gray-700 rounded-xl text-white mb-4 resize-none"
+                rows={4}
+              />
+              <button
+                onClick={() => addReview(
+                  selectedAnnouncement.ownerTelegramId,
+                  reviewStars,
+                  reviewText.trim()
+                )}
+                disabled={reviewStars === 0 || !reviewText.trim()}
+                className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl font-bold transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Отправить отзыв
+              </button>
+            </div>
+
             <div className="grid grid-cols-2 gap-4 mb-8">
               <button
                 onClick={() => openChat(selectedAnnouncement)}
@@ -937,6 +1205,27 @@ function App() {
                 <Share2 size={24} /> Поделиться
               </button>
             </div>
+
+            <button
+              onClick={() => {
+                if (window.confirm("Пожаловаться на объявление?")) {
+                  setAnnouncements(prev => prev.map(a => 
+                    a.id === selectedAnnouncement.id ? { ...a, reports: (a.reports || 0) + 1 } : a
+                  ));
+                  addNotification("Жалоба отправлена. Спасибо!");
+                  const updatedAd = announcements.find(a => a.id === selectedAnnouncement.id);
+                  if (updatedAd && (updatedAd.reports || 0) + 1 >= 3) {
+                    setAnnouncements(prev => prev.filter(a => a.id !== selectedAnnouncement.id));
+                    alert("Объявление скрыто из-за жалоб.");
+                    closeAnnouncement();
+                  }
+                }
+              }}
+              className="text-red-400 hover:text-red-300 text-sm flex items-center gap-2 mt-4 mb-6"
+            >
+              <AlertCircle size={20} /> Пожаловаться
+            </button>
+
             <div className="mt-8">
               <h3 className="text-xl font-bold mb-4">Вопросы и комментарии</h3>
               <div className="space-y-4">
@@ -962,6 +1251,7 @@ function App() {
                 </button>
               </div>
             </div>
+
             <div className="text-center text-gray-400 text-sm mt-8">
               <p>Опубликовано: {new Date(selectedAnnouncement.createdAt).toLocaleDateString('ru-RU')}</p>
               <p>Владелец: {selectedAnnouncement.ownerName}</p>
@@ -971,7 +1261,7 @@ function App() {
               </div>
             </div>
           </div>
-          <div className="sticky bottom-0 bg-black/90 backdrop-blur-xl border-t border-gray-800 p-4 flex justify-center">
+          <div className="sticky bottom-0 bg-black/90 backdrop-blur-xl border-t border-gray-800 p-4 flex justify-center gap-4 flex-wrap">
             <button
               onClick={() => toggleFavorite(selectedAnnouncement.id)}
               className="flex items-center gap-3 bg-gray-800/80 hover:bg-gray-700 px-8 py-4 rounded-full text-white font-medium transition"
@@ -984,13 +1274,27 @@ function App() {
               />
               <span>{favorites.includes(selectedAnnouncement.id) ? 'В избранном' : 'В избранное'}</span>
             </button>
+            {selectedAnnouncement.ownerTelegramId === (currentUser?.telegramId || currentUser?.email) && (
+              <button
+                onClick={() => {
+                  const now = Date.now();
+                  setAnnouncements(prev => prev.map(a =>
+                    a.id === selectedAnnouncement.id ? { ...a, boostedUntil: now + 24 * 60 * 60 * 1000 } : a
+                  ));
+                  alert("Объявление поднято в топ на 24 часа! 🚀");
+                }}
+                className="flex items-center gap-3 bg-yellow-600/80 hover:bg-yellow-700 px-6 py-4 rounded-full text-white font-medium transition shadow-lg"
+              >
+                <Flame size={24} /> Поднять в топ (24 ч)
+              </button>
+            )}
           </div>
         </div>
       )}
 
       {/* Модалка профиля */}
       {showProfileModal && currentUser && (
-        <div className="fixed inset-0 bg-black/90 z-[9999] flex items-center justify-center backdrop-blur-lg p-4">
+        <div className="fixed inset-0 bg-black/90 z-[9999] flex items-center justify-center backdrop-blur-lg p-4 animate-[fadeIn_0.3s_ease-out_forwards]">
           <div className="bg-gradient-to-br from-gray-900 via-black to-gray-950 rounded-3xl w-full max-w-2xl p-10 relative border border-indigo-500/40 shadow-2xl shadow-indigo-600/50 max-h-[92dvh] overflow-y-auto">
             <button onClick={() => setShowProfileModal(false)} className="absolute top-6 right-6 text-gray-400 hover:text-white transition">
               <X size={32} />
@@ -1010,7 +1314,79 @@ function App() {
                 {currentUser.username && <span>@{currentUser.username}</span>}
                 <span>{currentUser.district}</span>
               </div>
+              <div className="text-center mb-6">
+                <p className="text-xl text-gray-300">
+                  Объявлений в продаже: <span className="font-bold text-green-400">{myAds.length}</span>
+                </p>
+                <p className="text-sm text-gray-400 mt-1">
+                  Активный с {new Date(currentUser?.createdAt || Date.now()).toLocaleDateString('ru-RU')}
+                </p>
+              </div>
+              {currentUser.isPremium && (!currentUser.premiumUntil || currentUser.premiumUntil > Date.now()) ? (
+                <div className="flex flex-col items-center gap-2">
+                  <span className="bg-yellow-500/30 text-yellow-300 px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2">
+                    <Crown size={16} /> Премиум активен до {new Date(currentUser.premiumUntil).toLocaleDateString('ru-RU')}
+                  </span>
+                  <p className="text-sm text-yellow-300">Автоподнятие объявлений работает</p>
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    const now = Date.now();
+                    setCurrentUser(prev => ({ ...prev, isPremium: true, premiumUntil: now + 30*24*60*60*1000 }));
+                    localStorage.setItem('currentUser', JSON.stringify({ ...currentUser, isPremium: true, premiumUntil: now + 30*24*60*60*1000 }));
+                    alert("Премиум активирован на 30 дней! (демо)");
+                  }}
+                  className="bg-gradient-to-r from-yellow-500 to-amber-500 px-6 py-3 rounded-xl text-white font-medium flex items-center gap-2 mx-auto"
+                >
+                  <Crown size={20} /> Активировать Премиум (демо)
+                </button>
+              )}
+              <div className="mt-6 grid grid-cols-3 gap-4 text-center">
+                <div className="bg-black/40 p-4 rounded-xl">
+                  <BarChart2 className="mx-auto mb-2 text-green-400" size={32} />
+                  <p className="text-2xl font-bold">{getAnalytics().totalViews}</p>
+                  <p className="text-sm text-gray-400">просмотров</p>
+                </div>
+                <div className="bg-black/40 p-4 rounded-xl">
+                  <Heart className="mx-auto mb-2 text-pink-400" size={32} />
+                  <p className="text-2xl font-bold">{getAnalytics().totalFavorites}</p>
+                  <p className="text-sm text-gray-400">в избранном</p>
+                </div>
+                <div className="bg-black/40 p-4 rounded-xl">
+                  <Grid className="mx-auto mb-2 text-blue-400" size={32} />
+                  <p className="text-2xl font-bold">{getAnalytics().activeAds}</p>
+                  <p className="text-sm text-gray-400">активных</p>
+                </div>
+              </div>
+
+              {/* Топ продавцов */}
+              <div className="mt-10">
+                <h3 className="text-2xl font-bold text-center mb-6 bg-gradient-to-r from-yellow-400 to-amber-500 bg-clip-text text-transparent">
+                  Топ продавцов 🔥
+                </h3>
+                {topSellers.length === 0 ? (
+                  <p className="text-center text-gray-400">Пока нет продавцов с отзывами</p>
+                ) : (
+                  <div className="grid gap-4">
+                    {topSellers.map((seller, index) => (
+                      <div key={index} className="bg-black/50 p-4 rounded-xl flex items-center justify-between">
+                        <div>
+                          <p className="font-bold">{seller.name}</p>
+                          <div className="flex items-center gap-1 text-yellow-400 text-sm">
+                            <Star size={16} fill="currentColor" />
+                            {seller.rating.toFixed(1)} ({seller.reviewsCount} отзывов)
+                          </div>
+                          <p className="text-sm text-gray-400">{seller.adsCount} объявлений</p>
+                        </div>
+                        <div className="text-yellow-400 font-bold text-xl">#{index + 1}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
               <div className="bg-black/40 rounded-2xl p-6 border border-gray-700/50">
                 <div className="flex items-center gap-4 mb-4">
@@ -1056,7 +1432,7 @@ function App() {
                     key={item.id}
                     className="bg-black/50 rounded-3xl overflow-hidden border border-gray-700/50 hover:border-indigo-500/50 transition-all hover:shadow-2xl hover:shadow-indigo-500/20"
                   >
-                    <img src={item.images?.[0] || item.image} alt={item.title} className="w-full h-64 object-cover" />
+                    <img src={item.images?.[0] || item.image} alt={item.title} className="w-full h-64 object-cover" loading="lazy" />
                     <div className="p-8">
                       <div className="flex justify-between items-start mb-4">
                         <h3 className="text-2xl font-bold">{item.title}</h3>
@@ -1078,6 +1454,13 @@ function App() {
                         {item.location} • {item.district}
                       </div>
                       <p className="text-gray-300 line-clamp-4">{item.description}</p>
+                      {item.ownerRatings && item.ownerRatings.count > 0 && (
+                        <div className="mt-4 flex items-center gap-2 text-yellow-400">
+                          <Star size={20} fill="currentColor" />
+                          <span className="font-bold">{item.ownerRatings.average.toFixed(1)}</span>
+                          <span>({item.ownerRatings.count} отзывов)</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1089,7 +1472,7 @@ function App() {
 
       {/* Модалка чата */}
       {showChatModal && chatAnnouncement && (
-        <div className="fixed inset-0 bg-black/95 z-[9999] flex flex-col">
+        <div className="fixed inset-0 bg-black/95 z-[9999] flex flex-col animate-[fadeIn_0.3s_ease-out_forwards]">
           <div className="bg-gradient-to-r from-gray-900 to-black p-5 border-b border-gray-700 flex items-center justify-between">
             <button onClick={() => setShowChatModal(false)} className="text-gray-300 hover:text-white">
               <ArrowLeft size={28} />
@@ -1142,7 +1525,7 @@ function App() {
 
       {/* Модалка уведомлений */}
       {showNotificationsModal && (
-        <div className="fixed inset-0 bg-black/90 z-[9999] flex items-center justify-center backdrop-blur-lg p-4">
+        <div className="fixed inset-0 bg-black/90 z-[9999] flex items-center justify-center backdrop-blur-lg p-4 animate-[fadeIn_0.3s_ease-out_forwards]">
           <div className="bg-gradient-to-br from-gray-900 via-black to-gray-950 rounded-3xl w-full max-w-lg p-8 relative border border-purple-500/40 shadow-2xl shadow-purple-600/30 max-h-[92dvh] overflow-y-auto">
             <button onClick={() => setShowNotificationsModal(false)} className="absolute top-5 right-5 text-gray-400 hover:text-purple-400">
               <X size={32} />
@@ -1173,9 +1556,9 @@ function App() {
         </div>
       )}
 
-      {/* Модалка добавления/редактирования */}
+      {/* Модалка добавления объявления */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 backdrop-blur-md p-4">
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 backdrop-blur-md p-4 animate-[fadeIn_0.3s_ease-out_forwards]">
           <div className="bg-gradient-to-br from-gray-900 via-black to-gray-950 rounded-3xl w-full max-w-lg p-8 relative border border-green-500/40 shadow-2xl shadow-green-500/30 max-h-[92dvh] overflow-y-auto">
             <button onClick={() => setShowAddModal(false)} className="absolute top-5 right-5 text-gray-400 hover:text-green-400 transition">
               <X size={32} />
@@ -1201,6 +1584,8 @@ function App() {
                     isUrgent: false,
                     images: [],
                     status: 'active',
+                    boostedUntil: null,
+                    reports: 0,
                   });
                   if (template === 'Отдам даром') {
                     setNewAd({
@@ -1214,6 +1599,8 @@ function App() {
                       isUrgent: false,
                       images: [],
                       status: 'active',
+                      boostedUntil: null,
+                      reports: 0,
                     });
                   } else if (template === 'Срочно сегодня') {
                     setNewAd(prev => ({
@@ -1348,10 +1735,49 @@ function App() {
                   className="w-full p-4 bg-black/60 border border-green-500/30 rounded-xl text-white text-lg focus:outline-none focus:border-green-400 focus:ring-2 focus:ring-green-500/30 transition"
                   placeholder="Подробно..."
                 />
+                <div className="flex flex-wrap gap-3 mt-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const templates = {
+                        default: `Продаю ${newAd.title} в отличном состоянии. ${newAd.price}. Заберу самовывозом из ${newAd.location}. Звоните!`,
+                        urgent: `СРОЧНО! ${newAd.title} за ${newAd.price}. Отдам сегодня, самовывоз ${newAd.location}. Не упусти шанс! 🔥`,
+                        free: `Отдам даром ${newAd.title}! Только заберите сегодня из ${newAd.location}.`,
+                      };
+                      const key = newAd.isUrgent ? 'urgent' : (newAd.price.includes('0') || newAd.price.includes('дар')) ? 'free' : 'default';
+                      setNewAd(prev => ({ ...prev, description: templates[key] }));
+                      alert("Шаблон применён!");
+                    }}
+                    className="bg-purple-600/80 hover:bg-purple-700 px-5 py-2.5 rounded-xl text-sm font-medium transition flex items-center gap-2"
+                  >
+                    <Repeat size={18} /> Шаблон
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={generateDescription}
+                    disabled={generatingAI || !newAd.title.trim()}
+                    className={`px-6 py-2.5 rounded-xl text-sm font-medium transition flex items-center gap-2 shadow-md
+                      ${generatingAI 
+                        ? 'bg-gray-700 cursor-wait' 
+                        : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white'}`}
+                  >
+                    {generatingAI ? (
+                      <>
+                        <span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                        Генерирую...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles size={18} /> ИИ-описание
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
               <div>
                 <label className="block mb-2 text-gray-300 text-lg flex items-center gap-3">
-                  <Upload size={24} /> Фото (опционально, до 5)
+                  <Upload size={24} /> Фото (макс. {currentUser?.isPremium && (!currentUser.premiumUntil || currentUser.premiumUntil > Date.now()) ? '10' : '5'})
                 </label>
                 <input
                   type="file"
@@ -1364,7 +1790,7 @@ function App() {
                 {previews.length > 0 && (
                   <div className="flex gap-3 overflow-x-auto mt-4">
                     {previews.map((url, i) => (
-                      <img key={i} src={url} alt={`Превью ${i}`} className="w-24 h-24 object-cover rounded-xl border-2 border-green-500/40" />
+                      <img key={i} src={url} alt={`Превью ${i}`} className="w-24 h-24 object-cover rounded-xl border-2 border-green-500/40" loading="lazy" />
                     ))}
                   </div>
                 )}
@@ -1388,7 +1814,7 @@ function App() {
 
       {/* Модалка избранного */}
       {showFavorites && (
-        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 backdrop-blur-lg p-4">
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 backdrop-blur-lg p-4 animate-[fadeIn_0.3s_ease-out_forwards]">
           <div className="bg-gradient-to-br from-gray-900 via-black to-gray-950 rounded-3xl w-full max-w-4xl p-8 relative border border-pink-500/40 shadow-2xl shadow-pink-600/30 max-h-[92dvh] overflow-y-auto">
             <button onClick={() => setShowFavorites(false)} className="absolute top-5 right-5 text-gray-400 hover:text-pink-400 transition">
               <X size={32} />
@@ -1422,15 +1848,21 @@ function App() {
                     <div className="flex">
                       <div className="relative w-28 h-28 flex-shrink-0">
                         <img
+                          loading="lazy"
                           src={item.images?.[0] || item.image || "https://images.unsplash.com/photo-1606857521015-7f9fcf423740?w=800"}
                           alt={item.title}
                           className="w-full h-full object-cover"
-                          onError={e => e.target.src = "https://images.unsplash.com/photo-1606857521015-7f9fcf423740?w=800"}
+                          onError={e => e.target.src = "https://via.placeholder.com/150?text=Нет+фото"}
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
                         {item.isUrgent && (
                           <div className="absolute top-1 right-1 bg-red-600/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm animate-pulse">
                             <Flame size={10} /> СРОЧНО
+                          </div>
+                        )}
+                        {item.boostedUntil && item.boostedUntil > Date.now() && (
+                          <div className="absolute top-1 left-1 bg-yellow-500/90 text-black text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm animate-pulse">
+                            <ArrowUp size={10} /> В ТОПЕ
                           </div>
                         )}
                       </div>
@@ -1479,7 +1911,7 @@ function App() {
 
       {/* Модалка авторизации */}
       {showAuthModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 animate-[fadeIn_0.3s_ease-out_forwards]">
           <div className="bg-gray-900 rounded-3xl w-full max-w-md p-8 relative">
             <button onClick={() => setShowAuthModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-white">
               <X size={28} />
@@ -1520,7 +1952,7 @@ function App() {
 
       {/* Модалка бартер-клуба */}
       {showBarterModal && (
-        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 backdrop-blur-md p-4">
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 backdrop-blur-md p-4 animate-[fadeIn_0.3s_ease-out_forwards]">
           <div className="bg-gradient-to-br from-gray-900 via-black to-gray-950 rounded-3xl w-full max-w-lg p-8 relative border border-purple-500/40 shadow-2xl shadow-purple-600/30">
             <button onClick={() => setShowBarterModal(false)} className="absolute top-5 right-5 text-gray-400 hover:text-purple-400 transition">
               <X size={32} />
@@ -1548,6 +1980,63 @@ function App() {
                 Опубликовать обмен
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Модалка продавца */}
+      {showSellerAdsModal && (
+        <div className="fixed inset-0 bg-black/95 z-[10000] flex flex-col overflow-y-auto animate-[fadeIn_0.3s_ease-out_forwards]">
+          <div className="sticky top-0 bg-black/90 backdrop-blur-xl border-b border-gray-800 p-4 flex items-center justify-between z-10">
+            <button onClick={() => setShowSellerAdsModal(false)} className="text-gray-300 hover:text-white">
+              <ArrowLeft size={28} />
+            </button>
+            <h3 className="text-lg font-bold text-center flex-1">Объявления продавца</h3>
+            <div className="w-10" />
+          </div>
+          <div className="p-4 flex-1 space-y-4">
+            {announcements
+              .filter(ad => ad.ownerTelegramId === selectedSellerId && ad.status === 'active')
+              .map(item => (
+                <div
+                  key={item.id}
+                  className="bg-gray-900/70 rounded-xl p-4 cursor-pointer hover:bg-gray-800/70 transition flex gap-4"
+                  onClick={() => {
+                    openAnnouncement(item);
+                    setShowSellerAdsModal(false);
+                  }}
+                >
+                  <img
+                    loading="lazy"
+                    src={item.images?.[0] || "https://via.placeholder.com/100"}
+                    alt={item.title}
+                    className="w-20 h-20 object-cover rounded-lg flex-shrink-0"
+                    onError={e => e.target.src = "https://via.placeholder.com/100?text=Нет+фото"}
+                  />
+                  <div className="flex-1">
+                    <h4 className="font-semibold text-lg mb-1">{item.title}</h4>
+                    <p className="text-green-400 font-bold text-xl">{item.price}</p>
+                    <p className="text-sm text-gray-400 mt-1">{item.location} • {item.district}</p>
+                    {item.boostedUntil && item.boostedUntil > Date.now() && (
+                      <span className="inline-flex items-center gap-1 bg-yellow-500/30 text-yellow-300 text-xs px-2 py-0.5 rounded-full mt-2">
+                        <ArrowUp size={12} /> В топе
+                      </span>
+                    )}
+                    {item.ownerRatings && item.ownerRatings.count > 0 && (
+                      <div className="flex items-center gap-1 mt-2 text-yellow-400 text-xs">
+                        <Star size={14} fill="currentColor" />
+                        {item.ownerRatings.average.toFixed(1)} ({item.ownerRatings.count})
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            {announcements.filter(ad => ad.ownerTelegramId === selectedSellerId && ad.status === 'active').length === 0 && (
+              <div className="flex flex-col items-center justify-center h-full text-gray-400 py-20">
+                <Heart size={64} className="mb-6 opacity-50" />
+                <p className="text-xl">У продавца пока нет активных объявлений</p>
+              </div>
+            )}
           </div>
         </div>
       )}
